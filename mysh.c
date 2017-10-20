@@ -39,16 +39,16 @@ void type_prompt(char *prompt) {
 //return value: number of parameters
 //0 represents only command without any parameters
 //-1 represents wrong input
-//int read_command()
-//{
+int read_command()
+{
 
-//}
+}
 
 int main(int argc, char *argv[]) {
 	
 	//while(1) {
 		type_prompt(prompt);//print mysh>...
-		//read_command(commad,parameters);//get input
+		read_command(commad,parameters);//get input
 
 		/*int rc = fork();
 	    if (rc < 0) {

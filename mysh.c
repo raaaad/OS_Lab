@@ -1,25 +1,27 @@
+//head file
 #include <stdio.h>
 #include <stdlib.h>//exit()
 #include <unistd.h>//fork();getpid();close();execvp()
 #include <string.h>
 #include <sys/types.h>//getuid()
 #include <pwd.h>//getpwuid();
-#define nameLen 50
-#define pathLen 1024
-#define MAX_CMD 1024
-char prompt[MAX_CMD];
-//struct passwd *pwd;
 
-void type_prompt(char *prompt) {
+//define
+#define MAX_PROMPT 512
+#define MAX_NAME 50
+#define MAX_PATH 1024
+#define MAX_CMD 512
+
+void type_prompt(char* prompt) {
 	struct passwd *pwd;
-	char userName[nameLen],hostName[nameLen],pathName[pathLen];
+	char userName[MAX_NAME],hostName[MAX_NAME],pathName[MAX_PATH];
 	int length;
 
 	pwd = getpwuid(getuid());
-	getcwd(pathName, pathLen);//get path
+	getcwd(pathName, MAX_PATH);//get path
 
 	//print hostName and userName 
-    if(gethostname(hostName, nameLen) == 0)
+    if(gethostname(hostName, MAX_NAME) == 0)
         length = sprintf(prompt, "%s@%s:",pwd->pw_name,hostName);
     else
         length = sprintf(prompt, "%s@unknown:",pwd->pw_name);
@@ -33,22 +35,38 @@ void type_prompt(char *prompt) {
 
     length += sprintf(prompt+length, " mysh> ");
     puts(prompt);
-
+    return;
 }
 
 //return value: number of parameters
 //0 represents only command without any parameters
 //-1 represents wrong input
-int read_command()
-{
+// int read_command(char** command, char** parameters, char* prompt)
+// {
+// 	#ifdef READLINE_ON
+//     	free(buffer);
+//     buffer = readline(prompt);
+//     if(feof(stdin)) {
+//         printf("\n");
+//         exit(0);
+//     }
 
-}
+// 	#else
+// 	    printf("%s",prompt);
+// 	    char* Res_fgets = fgets(buffer,MAXLINE,stdin);
+// 	    if(Res_fgets == NULL)
+// 	    {
+// 	        printf("\n");
+// 	        exit(0);
+// 	    }		
+// 	#endif
+// }
 
 int main(int argc, char *argv[]) {
-	
+	char prompt[MAX_PROMPT];
 	//while(1) {
-		type_prompt(prompt);//print mysh>...
-		read_command(commad,parameters);//get input
+		type_prompt(prompt);//print mysh>
+		//read_command(commad, parameters, prompt);//cmd input
 
 		/*int rc = fork();
 	    if (rc < 0) {

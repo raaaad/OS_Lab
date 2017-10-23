@@ -1,22 +1,23 @@
 //head file
-#include <stdio.h>
+#include <stdio.h>//feof();
 #include <stdlib.h>//exit()
 #include <unistd.h>//fork();getpid();close();execvp()
-#include <string.h>//strlen();
+#include <string.h>//strlen();strcmp();
 #include <sys/types.h>//getuid()
 #include <pwd.h>//getpwuid();
 
 //define
 #define MAX_PROMPT 512
 #define MAX_NAME 50
-#define MAX_PATH 1024
-#define MAX_CMD 512
+#define MAX_PATH 512
+#define MAX_CMD 513//512+'\n'
 #define MAX_ARG 20
 
 #define DEBUG
 
 char *myshBuffer;
 
+char error_message[30] = "An error has occurred\n";
 
 void type_prompt(char* prompt) {
 	struct passwd *pwd;
@@ -44,17 +45,25 @@ void type_prompt(char* prompt) {
     return;
 }
 
-//return value: number of parameters
-//0 represents only command without any parameters
+
+
 int read_command(char **command,char **parameters,char *prompt) {
 	printf("%s",prompt);
     
     char* cmd = fgets(myshBuffer,MAX_CMD,stdin);
     
-    if (cmd == NULL) {
-        printf("\n");
-        exit(0);
+    //printf("\ncmd_len:%d\n",(int)strlen(cmd));
+    
+    if((int)strlen(cmd) == 512 && feof(stdin) == 0) {
+    	scanf("%*[^\n]%*c");
+    	write(STDERR_FILENO, error_message, strlen(error_message));   	
+    	return -1;
     }
+    
+    //if (cmd == NULL) {
+      //  printf("\n");
+        //exit(0);
+    //}
 
     if(myshBuffer[0] == '\0')
         return -1;
@@ -74,7 +83,7 @@ int read_command(char **command,char **parameters,char *prompt) {
         }
 
         if(*cmdTail == '\0' || *cmdTail == '\n') {
-            if(count == 0)//get a line break at command's head,exit
+            if(count == 0)//have a line break at command's head,exit
                 return -1;
             break;
         }
@@ -93,7 +102,7 @@ int read_command(char **command,char **parameters,char *prompt) {
             parameters[0] = p;
             count += 2;
 
-            #ifdef aaa
+            #ifdef DEBU
             printf("\nHead:%s\nTail:%s\n",cmdHead,cmdTail);
         	printf("\ncount==%d\ncommand:%s\n",count,*command);
         	#endif
@@ -119,22 +128,22 @@ int read_command(char **command,char **parameters,char *prompt) {
             cmdTail++;
 			cmdHead = cmdTail;//to continue
         }
+
     }
 
-    #ifdef DEBUG
-    printf("count:%d\n",count);
-    #endif
     parameters[count-1] = NULL;
 
     #ifdef DEBUG
-    printf("debug:\n");
+    printf("count:%d\n",count);
     printf("pathname:[%s]\ncommand:[%s]\nparameters:\n",*command,parameters[0]);
     int i;
     for(i = 0;i < count - 1; i++)
         printf("[%s]\n", parameters[i]);
     #endif
-
-    return count;
+    if(strcmp(parameters[0],"exit") != 0)
+	    return count;
+	else
+		return -2;
 }
 
 int main() {
@@ -144,14 +153,15 @@ int main() {
 	int para_count = 0;
 
 	myshBuffer = malloc(sizeof(char)*MAX_CMD);
-	parameters = malloc(sizeof(char *)*MAX_ARG);
+	parameters = malloc(sizeof(char*)*MAX_ARG);
 	
 	while(1) {
 		type_prompt(prompt);//generate prompt
 		para_count = read_command(&command, parameters, prompt);//cmd input
 		if(para_count == -1)//wrong input
 			continue;
-
+		if (para_count == -2)
+			break;
 		/*int rc = fork();
 	    if (rc < 0) {
 	    	//fork failed then exit

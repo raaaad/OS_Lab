@@ -7,17 +7,32 @@
 #include <pwd.h>//getpwuid();
 
 //define
-#define MAX_PROMPT 512
-#define MAX_NAME 50
-#define MAX_PATH 512
-#define MAX_CMD 513//512+'\n'
-#define MAX_ARG 20
+#define MAX_PROMPT 513
+#define MAX_NAME 51
+#define MAX_PATH 513
+#define MAX_CMD 515//512+'\n'
+#define MAX_ARG 21
 
 #define DEBUG
+
 
 char *myshBuffer;
 
 char error_message[30] = "An error has occurred\n";
+
+#define BACKGROUND 			1
+#define IN_REDIRECT 		2
+#define OUT_REDIRECT 		4
+#define OUT_REDIRECT_APPEND	8
+#define IS_PIPED 			16
+struct CMD_INFO
+{
+	int flag;
+	char* input;
+	char* output;
+	char* cmd2;
+	char** parameters2;
+};
 
 void type_prompt(char* prompt) {
 	struct passwd *pwd;
@@ -45,25 +60,22 @@ void type_prompt(char* prompt) {
     return;
 }
 
-
-
 int read_command(char **command,char **parameters,char *prompt) {
 	printf("%s",prompt);
     
     char* cmd = fgets(myshBuffer,MAX_CMD,stdin);
     
-    //printf("\ncmd_len:%d\n",(int)strlen(cmd));
-    
-    if((int)strlen(cmd) == 512 && feof(stdin) == 0) {
-    	scanf("%*[^\n]%*c");
+    #ifdef db2_0
+    printf("cmd_len:%d",(int)strlen(cmd));
+    #endif
+
+    if((int)strlen(cmd) > 513) {
+    	//scanf("%*[^\n]%*c");
+    	//fflush(stdin);
+    	rewind(stdin);
     	write(STDERR_FILENO, error_message, strlen(error_message));   	
     	return -1;
     }
-    
-    //if (cmd == NULL) {
-      //  printf("\n");
-        //exit(0);
-    //}
 
     if(myshBuffer[0] == '\0')
         return -1;
@@ -102,7 +114,7 @@ int read_command(char **command,char **parameters,char *prompt) {
             parameters[0] = p;
             count += 2;
 
-            #ifdef DEBU
+            #ifdef db2_1
             printf("\nHead:%s\nTail:%s\n",cmdHead,cmdTail);
         	printf("\ncount==%d\ncommand:%s\n",count,*command);
         	#endif
@@ -133,13 +145,14 @@ int read_command(char **command,char **parameters,char *prompt) {
 
     parameters[count-1] = NULL;
 
-    #ifdef DEBUG
+    #ifdef db2_2
     printf("count:%d\n",count);
     printf("pathname:[%s]\ncommand:[%s]\nparameters:\n",*command,parameters[0]);
     int i;
     for(i = 0;i < count - 1; i++)
         printf("[%s]\n", parameters[i]);
     #endif
+
     if(strcmp(parameters[0],"exit") != 0)
 	    return count;
 	else
@@ -162,6 +175,9 @@ int main() {
 			continue;
 		if (para_count == -2)
 			break;
+		para_count -= 1;
+		cmd_analysis(parameters,para_count,&info);
+
 		/*int rc = fork();
 	    if (rc < 0) {
 	    	//fork failed then exit

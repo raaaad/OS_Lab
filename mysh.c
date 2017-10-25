@@ -17,6 +17,7 @@
 #define MAX_CMD 515//512+'\n'
 #define MAX_ARG 21
 #define MAX_CNT 1024
+#define MAX_LINE 513
 
 #define DEBUG
 
@@ -27,11 +28,13 @@ int cmp(const void *a, const void *b);
 
 void type_prompt(char* prompt);
 int read_command(char **command,char **parameters,char *prompt);
+
+int built_in_command(char *command, char **parameters);
 int built_in_cd(char **parameters);
 int built_in_pwd();
 int built_in_ls(char **parameters);
-int built_in_command(char *command, char **parameters);
-
+char* uid_str(uid_t uid);
+char* gid_str(gid_t gid);
 /*#define BACKGROUND 			1
 #define IN_REDIRECT 		2
 #define OUT_REDIRECT 		4
@@ -272,7 +275,8 @@ int cmp(const void *a, const void *b) {
 int built_in_ls(char **parameters) {
 	DIR *dir;
     struct dirent *rent;//struct
-    
+    struct stat dir_stat;
+
     char list[MAX_CNT][MAX_NAME];
     char str[MAX_NAME];
     char dir_path[MAX_PATH];
@@ -307,14 +311,14 @@ int built_in_ls(char **parameters) {
 	}
 	//printf("%s\n", dir_path);
     dir = opendir(dir_path);
-    if (dir == NULL) {  
+    if (dir == NULL) {
         fprintf(stderr, "Can`t open directory %s\n", dir_path);  
-        return -1;  
+        return -1;
     }
 
 	while((rent=readdir(dir)) != NULL){//read
     	strcpy(str, rent->d_name);
-    	if(str[0] == '.')
+    	if(str[0] == '.' && option_a == 0)
         	continue;
     	if(!str)
         	continue;     
@@ -323,12 +327,69 @@ int built_in_ls(char **parameters) {
     	
     }
     qsort(list, cnt, sizeof(list[0]), cmp);
-    for(i = 0; i < cnt; i++) {
-        printf("%s", list[i]);
-        if(i == cnt-1)
-        	printf("\n");
-        else
-        	printf("  ");
+
+    //usual output
+    if(option_l == 0) {
+	    for(i = 0; i < cnt; i++) {
+	        printf("%s", list[i]);
+	        if(i == cnt-1)
+	        	printf("\n");
+	        else
+	        	printf("  ");
+	    }
+	}//-l(long output)
+    else {
+    	char mode_info[MAX_CNT][12];
+    	int nlink_info[MAX_CNT];
+    	char uid_info[MAX_CNT][MAX_NAME];
+	    char gid_info[MAX_CNT][MAX_NAME];
+	    long sz_info[MAX_CNT];
+	    char time_info[MAX_CNT][MAX_NAME];
+
+    	for (i = 0; i < cnt; i++)
+    	{
+    		if(stat(list[i], &dir_stat) == -1){ // cannot stat 
+    			printf("Can't get infomation of file %s\n", list[i]);
+    			return -1;
+    		}
+
+    		int mode = dir_stat.st_mode;
+    		strcpy(mode_info[i], "----------"); // default = no perms 
+	        if(S_ISDIR(mode)) mode_info[i][0] = 'd'; //directory
+	        if(S_ISCHR(mode)) mode_info[i][0] = 'c'; // char device 
+	        if(S_ISBLK(mode)) mode_info[i][0] = 'b'; // block device 
+	        if(S_ISLNK(mode)) mode_info[i][0] = 'l';
+
+	        if(mode & S_IRUSR) mode_info[i][1] = 'r'; //user 
+	        if(mode & S_IWUSR) mode_info[i][2] = 'w';
+	        if(mode & S_IXUSR) mode_info[i][3] = 'x';
+
+	        if(mode & S_IRGRP) mode_info[i][4] = 'r'; //group 
+	        if(mode & S_IWGRP) mode_info[i][5] = 'w';
+	        if(mode & S_IXGRP) mode_info[i][6] = 'x';
+
+	        if(mode & S_IROTH) mode_info[i][7] = 'r'; //other
+	        if(mode & S_IWOTH) mode_info[i][8] = 'w';
+	        if(mode & S_IXOTH) mode_info[i][9] = 'x';
+
+	        nlink_info[i] = (int)dir_stat.st_nlink;
+	        strcpy(uid_info[i] , uid_str(dir_stat.st_uid));
+	        strcpy(gid_info[i] , gid_str(dir_stat.st_gid));
+	        sz_info[i] = (long)dir_stat.st_size;
+	        strcpy(time_info[i] , 4 + ctime(&(dir_stat.st_mtime)));
+    	}
+    	//print
+    	printf("total %d\n", cnt);
+    	for(i = 0; i < cnt; i++) {
+    		stat(list[i], &dir_stat);
+    		printf("%s", mode_info[i]);
+	        printf("%3d ", nlink_info[i]);
+	        printf("%-10s",uid_info[i]);
+	        printf("%-10s", gid_info[i]);
+	        printf("%6ld ", sz_info[i]);
+	        printf("%.12s ", time_info[i]);
+	        printf("%s\n", list[i]);
+	    }
     }
     closedir(dir);
     //free(list);
@@ -336,4 +397,24 @@ int built_in_ls(char **parameters) {
     return 0;
 }
 
+char* uid_str(uid_t uid) 
+{
+        static char userstr[10];
+        struct passwd *pw_ptr;
+        if((pw_ptr = getpwuid(uid)) == NULL){
+                sprintf(userstr, "%d", uid);
+                return userstr;
+        }else
+                return pw_ptr->pw_name;
+}
 
+char* gid_str(gid_t gid)
+{
+        static char grpstr[10];
+        struct group *grp_ptr;
+        if((grp_ptr = getgrgid(gid)) == NULL){
+                sprintf(grpstr, "% d", gid);
+                return grpstr;
+        }else
+                return grp_ptr->gr_name;
+}

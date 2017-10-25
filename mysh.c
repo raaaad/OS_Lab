@@ -11,7 +11,6 @@
 #include <time.h>
 
 //define
-#define MAX_PROMPT 513
 #define MAX_NAME 51
 #define MAX_PATH 513
 #define MAX_CMD 515//512+'\n'
@@ -23,24 +22,11 @@
 
 char *myshBuffer;
 
-void printError();
-int cmp(const void *a, const void *b);
-
-void type_prompt(char* prompt);
-int read_command(char **command,char **parameters,char *prompt);
-
-int built_in_command(char *command, char **parameters);
-int built_in_cd(char **parameters);
-int built_in_pwd();
-int built_in_ls(char **parameters);
-char* uid_str(uid_t uid);
-char* gid_str(gid_t gid);
-/*#define BACKGROUND 			1
+#define BACKGROUND 			1
 #define IN_REDIRECT 		2
 #define OUT_REDIRECT 		4
 #define OUT_REDIRECT_APPEND	8
 #define IS_PIPED 			16
-
 struct CMD_INFO
 {
 	int flag;
@@ -48,14 +34,26 @@ struct CMD_INFO
 	char* output;
 	char* cmd2;
 	char** parameters2;
-};*/
+};
+
+void printError();
+int cmp(const void *a, const void *b);
+void type_prompt(char* prompt);
+int read_command(char **command,char **parameters,char *prompt);
+int cmd_analysis(char **parameters,int para_count, struct CMD_INFO *info);
+int built_in_command(char *command, char **parameters);
+int built_in_cd(char **parameters);
+int built_in_pwd();
+int built_in_ls(char **parameters);
+char* uid_str(uid_t uid);
+char* gid_str(gid_t gid);
 
 int main() {
-	char prompt[MAX_PROMPT];
+	char prompt[MAX_LINE];
 	char *command = NULL;
 	char **parameters;
 	int para_count = 0;
-	//struct CMD_INFO info;
+	struct CMD_INFO info;
 
 	myshBuffer = malloc(sizeof(char)*MAX_CMD);
 	parameters = malloc(sizeof(char*)*MAX_ARG);
@@ -66,7 +64,7 @@ int main() {
 		if(para_count == -1)//wrong input
 			continue;
 		para_count -= 1;
-		//cmd_analysis(parameters,para_count,&info);
+		cmd_analysis(parameters,para_count,&info);
 		if(built_in_command(command,parameters))
             continue;
 		/*int rc = fork();
@@ -215,7 +213,8 @@ int read_command(char **command,char **parameters,char *prompt) {
     return count;
 }
 
-/*int cmd_analysis(char **parameters,int para_count,struct CMD_INFO *info) {
+int cmd_analysis(char **parameters,int para_count, struct CMD_INFO *info) {
+	int i;
 	//init
 	info->flag = 0;
     info->input = NULL;
@@ -223,9 +222,62 @@ int read_command(char **command,char **parameters,char *prompt) {
     info->cmd2 = NULL;
     info->parameters2 = NULL;
 
-    if(strcmp(parameters[para_count-1], "&"))
+    if(strcmp(parameters[para_count-1],"&") ==0) {//wait
+        info->flag |= BACKGROUND;
+        parameters[--para_count] = NULL;
+    }
 
-}*/
+    for(i = 0; i < para_count;) {
+        if(strcmp(parameters[i], "<<") == 0 || strcmp(parameters[i], "<") == 0)
+        {
+            info->flag |= IN_REDIRECT;
+            info->input = parameters[i+1];
+            parameters[i] = NULL;
+            i+=2;
+        }
+        else if(strcmp(parameters[i], ">") == 0)
+        {
+            info->flag |= OUT_REDIRECT;
+            info->output = parameters[i+1];
+            parameters[i] = NULL;
+            i+=2;
+        }
+        else if(strcmp(parameters[i], ">>") == 0)
+        {
+            info->flag |= OUT_REDIRECT_APPEND;
+            info->output = parameters[i+1];
+            parameters[i] = NULL;
+            i+=2;
+        }
+        else if(strcmp(parameters[i], "|") == 0)
+        {//pipe
+            char* para2;
+            info->flag |= IS_PIPED;
+            parameters[i] = NULL;
+            info->cmd2 = parameters[i+1];
+            info->parameters2 = &parameters[i+1];
+            for(para2 = info->parameters2[0] + strlen(info->parameters2[0]); para2 != &(info->parameters2[0][0]) && *para2!='/'; para2--);
+            //point para2 at the second list of parameters
+            if(*para2 == '/')
+                para2++;
+            info->parameters2[0] = para2;
+            break;
+        }
+        else
+            i++;
+    }
+    #ifdef DEBUG_3
+    printf("\nbackground:%s\n", info->flag&BACKGROUND ? "yes" : "no");
+	printf("in redirect:");
+	info->flag&IN_REDIRECT ? printf("yes,file:%s\n", info->input) : printf("no\n");
+	printf("out redirect:");
+	info->flag&OUT_REDIRECT ? printf("yes,file:%s\n",info->output) : printf("no\n");
+	printf("pipe:");
+	info->flag&IS_PIPED ? printf("yes,command:%s %s %s\n", info->cmd2, info->parameters2[0], info->parameters2[1]) : printf("no\n");
+	#endif
+    return 1;
+}
+
 int built_in_command(char *command, char **parameters) {
 	//exit
 	if(strcmp(command,"exit")==0 || strcmp(command,"q")==0)
@@ -397,8 +449,7 @@ int built_in_ls(char **parameters) {
     return 0;
 }
 
-char* uid_str(uid_t uid) 
-{
+char* uid_str(uid_t uid) {
         static char userstr[10];
         struct passwd *pw_ptr;
         if((pw_ptr = getpwuid(uid)) == NULL){
@@ -408,8 +459,7 @@ char* uid_str(uid_t uid)
                 return pw_ptr->pw_name;
 }
 
-char* gid_str(gid_t gid)
-{
+char* gid_str(gid_t gid) {
         static char grpstr[10];
         struct group *grp_ptr;
         if((grp_ptr = getgrgid(gid)) == NULL){

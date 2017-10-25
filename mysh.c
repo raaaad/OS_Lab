@@ -7,6 +7,8 @@
 #include <pwd.h>//getpwuid();
 #include <dirent.h>
 #include <sys/stat.h>
+#include <grp.h>//group
+#include <time.h>
 
 //define
 #define MAX_PROMPT 513
@@ -18,10 +20,19 @@
 
 #define DEBUG
 
-
 char *myshBuffer;
 
-#define BACKGROUND 			1
+void printError();
+int cmp(const void *a, const void *b);
+
+void type_prompt(char* prompt);
+int read_command(char **command,char **parameters,char *prompt);
+int built_in_cd(char **parameters);
+int built_in_pwd();
+int built_in_ls(char **parameters);
+int built_in_command(char *command, char **parameters);
+
+/*#define BACKGROUND 			1
 #define IN_REDIRECT 		2
 #define OUT_REDIRECT 		4
 #define OUT_REDIRECT_APPEND	8
@@ -34,16 +45,50 @@ struct CMD_INFO
 	char* output;
 	char* cmd2;
 	char** parameters2;
-};
+};*/
+
+int main() {
+	char prompt[MAX_PROMPT];
+	char *command = NULL;
+	char **parameters;
+	int para_count = 0;
+	//struct CMD_INFO info;
+
+	myshBuffer = malloc(sizeof(char)*MAX_CMD);
+	parameters = malloc(sizeof(char*)*MAX_ARG);
+
+	while(1) {	
+		type_prompt(prompt);//generate prompt
+		para_count = read_command(&command, parameters, prompt);//cmd input
+		if(para_count == -1)//wrong input
+			continue;
+		para_count -= 1;
+		//cmd_analysis(parameters,para_count,&info);
+		if(built_in_command(command,parameters))
+            continue;
+		/*int rc = fork();
+	    if (rc < 0) {
+	    	//fork failed then exit
+			fprintf(stderr, "fork failed\n");
+	        exit(1);
+	    }
+		else if(rc != 0) {
+			//parent
+			waitpid(-1, &status, 0);//wait until child exit
+		}
+		else {
+			//child
+			execve(command, parameters, 0);//execute command
+	*/}
+	free(parameters);
+	free(myshBuffer);	
+    return 0;
+}
 
 void printError() {
 	char error_message[30] = "An error has occurred\n";
 	write(STDERR_FILENO, error_message, strlen(error_message));   	
     return;
-}
-
-int cmp(const void *a, const void *b) {
-	return strcmp((char*)a,(char*)b);
 }
 
 void type_prompt(char* prompt) {
@@ -178,6 +223,20 @@ int read_command(char **command,char **parameters,char *prompt) {
     if(strcmp(parameters[para_count-1], "&"))
 
 }*/
+int built_in_command(char *command, char **parameters) {
+	//exit
+	if(strcmp(command,"exit")==0 || strcmp(command,"q")==0)
+        exit(0);
+    else if(strcmp(command, "cd") == 0)
+    	built_in_cd(parameters);
+    else if(strcmp(command, "pwd") == 0)
+    	built_in_pwd();
+    else if(strcmp(command, "ls") == 0)
+    	built_in_ls(parameters);
+    else
+    	return 0;
+    return 0;
+}
 
 int built_in_cd(char **parameters) {
 	char *cd_path = NULL;
@@ -206,91 +265,75 @@ int built_in_pwd() {
 	return 0;
 }
 
+int cmp(const void *a, const void *b) {
+	return strcmp((char*)a,(char*)b);
+}
+
 int built_in_ls(char **parameters) {
 	DIR *dir;
-    char str[MAX_NAME];
-    char list[MAX_CNT][MAX_NAME];
-    int cnt = 0, i;
-
     struct dirent *rent;//struct
     
-    if(parameters[1] == NULL)//ls (null)
-    	parameters[1] = ".";
+    char list[MAX_CNT][MAX_NAME];
+    char str[MAX_NAME];
+    char dir_path[MAX_PATH];
+    //str = malloc(sizeof(char)*MAX_NAME);
+    //dir_path = malloc(sizeof(char)*MAX_PATH);
+    //list = malloc(sizeof(char)*MAX_NAME*MAX_CNT);
 
-    dir = opendir(parameters[1]);
+    int cnt = 0, i;
+    int option_a = 0, option_l = 0;
+    
+    for(i = 1;parameters[i] != NULL; i++) {
+    	//printf("%s\n",parameters[i] );
+    	if(parameters[i][0] == '-') {
+    		int j = 1;
+    		while(parameters[i][j] != '\0') {
+    			if(parameters[i][j] == 'a')
+    				option_a = 1;
+    			else if(parameters[i][j] == 'l')
+    				option_l = 1;
+    			j++;
+    		}
+    	}
+    	else
+    		break;
+    }
+    //printf("a:%d l:%d\n",option_a,option_l );
+    if(parameters[i] == NULL)//ls (null
+    	strcpy(dir_path, ".");	
+	else {
+		//printf("%s\n",parameters[i]);
+		strcpy(dir_path, parameters[i]);
+	}
+	//printf("%s\n", dir_path);
+    dir = opendir(dir_path);
     if (dir == NULL) {  
-        fprintf(stderr, "Can`t open directory %s\n", parameters[1]);  
+        fprintf(stderr, "Can`t open directory %s\n", dir_path);  
         return -1;  
     }
 
-	//char *p = *list;
 	while((rent=readdir(dir)) != NULL){//read
     	strcpy(str, rent->d_name);
     	if(str[0] == '.')
         	continue;
     	if(!str)
-        	continue;
-    	strcpy(list[cnt++], str);
-    	printf("%d %s\n", cnt,list[cnt-1]);
+        	continue;     
+        //printf("%d %s\n", cnt,list[cnt-1]);
+	    strcpy(list[cnt++], str);
+    	
     }
-    printf("------------\n");
     qsort(list, cnt, sizeof(list[0]), cmp);
-    for(i = 0; i < cnt; i++)
-        printf("%d %s\n", i,list[i]);
+    for(i = 0; i < cnt; i++) {
+        printf("%s", list[i]);
+        if(i == cnt-1)
+        	printf("\n");
+        else
+        	printf("  ");
+    }
     closedir(dir);
+    //free(list);
+    //free(str);
     return 0;
 }
 
-int built_in_command(char *command, char **parameters) {
-	//exit
-	if(strcmp(command,"exit")==0 || strcmp(command,"q")==0)
-        exit(0);
-    else if(strcmp(command, "cd") == 0)
-    	built_in_cd(parameters);
-    else if(strcmp(command, "pwd") == 0)
-    	built_in_pwd();
-    else if(strcmp(command, "ls") == 0)
-    	built_in_ls(parameters);
-    else
-    	return 0;
-    return 0;
-}
 
-int main() {
-	char prompt[MAX_PROMPT];
-	char *command = NULL;
-	char **parameters;
-	int para_count = 0;
-	struct CMD_INFO info;
-
-	myshBuffer = malloc(sizeof(char)*MAX_CMD);
-	parameters = malloc(sizeof(char*)*MAX_ARG);
-
-	while(1) {	
-		type_prompt(prompt);//generate prompt
-		para_count = read_command(&command, parameters, prompt);//cmd input
-		if(para_count == -1)//wrong input
-			continue;
-		para_count -= 1;
-		//cmd_analysis(parameters,para_count,&info);
-		if(built_in_command(command,parameters))
-            continue;
-		/*int rc = fork();
-	    if (rc < 0) {
-	    	//fork failed then exit
-			fprintf(stderr, "fork failed\n");
-	        exit(1);
-	    }
-		else if(rc != 0) {
-			//parent
-			waitpid(-1, &status, 0);//wait until child exit
-		}
-		else {
-			//child
-			execve(command, parameters, 0);//execute command
-	*/}
-
-	free(parameters);
-	free(myshBuffer);	
-    return 0;
-}

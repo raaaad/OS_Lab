@@ -1,5 +1,5 @@
 //head file
-#include <stdio.h>//feof();
+#include <stdio.h>//feof();fileno();
 #include <stdlib.h>//exit();getenv();
 #include <unistd.h>//fork();getpid();close();execvp();chdir();stat();
 #include <string.h>//strlen();strcmp();
@@ -9,6 +9,7 @@
 #include <sys/stat.h>
 #include <grp.h>//group
 #include <time.h>
+#include <fcntl.h>//open();
 
 //define
 #define MAX_NAME 51
@@ -54,33 +55,86 @@ int main() {
 	char **parameters;
 	int para_count = 0;
 	struct CMD_INFO info;
+	pid_t child_pid;
 
 	myshBuffer = malloc(sizeof(char)*MAX_CMD);
 	parameters = malloc(sizeof(char*)*MAX_ARG);
 
 	while(1) {	
+		
 		type_prompt(prompt);//generate prompt
 		para_count = read_command(&command, parameters, prompt);//cmd input
 		if(para_count == -1)//wrong input
 			continue;
 		para_count -= 1;
 		cmd_analysis(parameters,para_count,&info);
+		
 		if(built_in_command(command,parameters))
             continue;
-		/*int rc = fork();
-	    if (rc < 0) {
+
+        int in_fd,out_fd;//file description
+        //int pipe_fd[2];
+        /*if(CMD_INFO.flag == IS_PIPED) {//pipe
+        	if(pipe(pipe_fd) < 0) {
+
+        	}*/
+		
+	    if ((child_pid = fork()) < 0) {
 	    	//fork failed then exit
-			fprintf(stderr, "fork failed\n");
+	    	char err_fork[] = "fork failed\n";
+	    	write(STDERR_FILENO,err_fork, strlen(err_fork));
 	        exit(1);
 	    }
-		else if(rc != 0) {
+		else if(child_pid != 0) {
 			//parent
-			waitpid(-1, &status, 0);//wait until child exit
+			//waitpid(-1, &status, 0);//wait until child exit
+			continue;
 		}
 		else {
 			//child
-			execve(command, parameters, 0);//execute command
-	*/}
+			char err_openfile[] =  "Open file failed\n";
+			char err_dup2[] = "Error in dup2\n";
+			if (info.flag & OUT_REDIRECT) {//need new a fil
+				out_fd = open(info.output, O_CREAT|O_TRUNC|O_WRONLY, 0666);
+				if(out_fd < 0) {
+					write(STDERR_FILENO, err_openfile, strlen(err_openfile));
+					exit(1);
+				}
+				close(fileno(stdout));//close stdout's file descriper
+				if (dup2(out_fd, fileno(stdout)) < 0) {	
+					write(STDERR_FILENO, err_dup2, strlen(err_dup2));
+				}//copy out_fd to stdout
+				close(out_fd);
+			}
+			if (info.flag & OUT_REDIRECT_APPEND) {
+				out_fd = open(info.output, O_CREAT|O_APPEND|O_WRONLY);
+				if(out_fd < 0) {
+					write(STDERR_FILENO, err_openfile, strlen(err_openfile));
+					exit(1);
+				}
+				close(fileno(stdout));
+				if (dup2(out_fd, fileno(stdout)) < 0) {
+					write(STDERR_FILENO, err_dup2, strlen(err_dup2));
+				}
+				close(out_fd);	
+			}
+			if(info.flag & IN_REDIRECT)
+            {
+                in_fd = open(info.input, O_CREAT|O_RDONLY, 0666);
+                if(in_fd < 0) {
+					write(STDERR_FILENO, err_openfile, strlen(err_openfile));
+					exit(1);
+                }
+				close(fileno(stdin)); 
+                if (dup2(in_fd, fileno(stdin)) < 0) {
+					write(STDERR_FILENO, err_dup2, strlen(err_dup2));
+				}
+				close(in_fd); 
+            }
+            printf("im here\n");
+			execvp(command, parameters);//execute command
+		}
+	}
 	free(parameters);
 	free(myshBuffer);	
     return 0;
@@ -115,7 +169,7 @@ void type_prompt(char* prompt) {
 
     length += sprintf(prompt+length, " mysh> ");
     //puts(prompt);
-    printf("%s",prompt);
+    write(STDOUT_FILENO, prompt, length);
     return;
 }
 
@@ -227,30 +281,26 @@ int cmd_analysis(char **parameters,int para_count, struct CMD_INFO *info) {
         parameters[--para_count] = NULL;
     }
 
-    for(i = 0; i < para_count;) {
-        if(strcmp(parameters[i], "<<") == 0 || strcmp(parameters[i], "<") == 0)
-        {
+    for(i = 0; i < para_count;) {//redirect
+        if(strcmp(parameters[i], "<<") == 0 || strcmp(parameters[i], "<") == 0) {
             info->flag |= IN_REDIRECT;
             info->input = parameters[i+1];
             parameters[i] = NULL;
             i+=2;
         }
-        else if(strcmp(parameters[i], ">") == 0)
-        {
+        else if(strcmp(parameters[i], ">") == 0) {
             info->flag |= OUT_REDIRECT;
             info->output = parameters[i+1];
             parameters[i] = NULL;
             i+=2;
         }
-        else if(strcmp(parameters[i], ">>") == 0)
-        {
+        else if(strcmp(parameters[i], ">>") == 0) {
             info->flag |= OUT_REDIRECT_APPEND;
             info->output = parameters[i+1];
             parameters[i] = NULL;
             i+=2;
         }
-        else if(strcmp(parameters[i], "|") == 0)
-        {//pipe
+        else if(strcmp(parameters[i], "|") == 0) {//pipe
             char* para2;
             info->flag |= IS_PIPED;
             parameters[i] = NULL;
@@ -275,7 +325,7 @@ int cmd_analysis(char **parameters,int para_count, struct CMD_INFO *info) {
 	printf("pipe:");
 	info->flag&IS_PIPED ? printf("yes,command:%s %s %s\n", info->cmd2, info->parameters2[0], info->parameters2[1]) : printf("no\n");
 	#endif
-    return 1;
+    return 0;
 }
 
 int built_in_command(char *command, char **parameters) {
@@ -288,7 +338,7 @@ int built_in_command(char *command, char **parameters) {
     	built_in_pwd();
     else if(strcmp(command, "ls") == 0)
     	built_in_ls(parameters);
-    else
+    else//wait
     	return 0;
     return 0;
 }
@@ -316,7 +366,11 @@ int built_in_pwd() {
 	char *cwd = NULL;
 	cwd = malloc(MAX_PATH);
 	getcwd(cwd, MAX_PATH);
-	printf("%s\n", cwd);
+	int j;
+	char buf_pwd[MAX_PATH];
+	j = sprintf(buf_pwd, "%s\n", cwd);
+	write(STDOUT_FILENO, buf_pwd, strlen(buf_pwd));
+	//printf("%s\n", cwd);
 	return 0;
 }
 
@@ -364,7 +418,10 @@ int built_in_ls(char **parameters) {
 	//printf("%s\n", dir_path);
     dir = opendir(dir_path);
     if (dir == NULL) {
-        fprintf(stderr, "Can`t open directory %s\n", dir_path);  
+    	int j;
+    	char err_path[MAX_PATH];
+    	j = sprintf(err_path, "Can`t open directory %s\n", dir_path); 
+    	write(STDERR_FILENO, err_path, strlen(err_path));
         return -1;
     }
 
@@ -383,11 +440,15 @@ int built_in_ls(char **parameters) {
     //usual output
     if(option_l == 0) {
 	    for(i = 0; i < cnt; i++) {
-	        printf("%s", list[i]);
-	        if(i == cnt-1)
-	        	printf("\n");
+	    	int j = 0;
+	    	char list_buf[MAX_PATH];
+	    	j = sprintf(list_buf, "%s", list[i]);
+	    	if(i == cnt-1)
+	        	j += sprintf(list_buf + j, "\n");
 	        else
-	        	printf("  ");
+	        	j += sprintf(list_buf + j, "  ");
+	        write(STDOUT_FILENO, list_buf, strlen(list_buf));
+	        
 	    }
 	}//-l(long output)
     else {
@@ -400,8 +461,12 @@ int built_in_ls(char **parameters) {
 
     	for (i = 0; i < cnt; i++)
     	{
-    		if(stat(list[i], &dir_stat) == -1){ // cannot stat 
-    			printf("Can't get infomation of file %s\n", list[i]);
+    		if(stat(list[i], &dir_stat) == -1){ // cannot stat
+    			int j = 0;
+    			char err_getinfo[MAX_LINE];
+    			j = sprintf(err_getinfo, "Can't get infomation of file ");
+    			j += sprintf(err_getinfo + j, "%s\n", list[i]);
+    			write(STDERR_FILENO, err_getinfo, strlen(err_getinfo));
     			return -1;
     		}
 
@@ -431,16 +496,21 @@ int built_in_ls(char **parameters) {
 	        strcpy(time_info[i] , 4 + ctime(&(dir_stat.st_mtime)));
     	}
     	//print
-    	printf("total %d\n", cnt);
+    	char buf_totalinfo[MAX_LINE];
+    	int t = sprintf(buf_totalinfo, "total %d\n", cnt);
+    	write(STDOUT_FILENO, buf_totalinfo, strlen(buf_totalinfo));
     	for(i = 0; i < cnt; i++) {
+    		int j = 0;
+    		char buf_print[MAX_LINE];
     		stat(list[i], &dir_stat);
-    		printf("%s", mode_info[i]);
-	        printf("%3d ", nlink_info[i]);
-	        printf("%-10s",uid_info[i]);
-	        printf("%-10s", gid_info[i]);
-	        printf("%6ld ", sz_info[i]);
-	        printf("%.12s ", time_info[i]);
-	        printf("%s\n", list[i]);
+    		j = sprintf(buf_print, "%s", mode_info[i]);
+	        j += sprintf(buf_print + j, "%3d ", nlink_info[i]);
+	        j += sprintf(buf_print + j, "%-10s",uid_info[i]);
+	        j += sprintf(buf_print + j, "%-10s", gid_info[i]);
+	        j += sprintf(buf_print + j, "%6ld ", sz_info[i]);
+	        j += sprintf(buf_print + j, "%.12s ", time_info[i]);
+	        j += sprintf(buf_print + j, "%s\n", list[i]);
+	        write(STDOUT_FILENO, buf_print, strlen(buf_print));
 	    }
     }
     closedir(dir);
@@ -463,7 +533,7 @@ char* gid_str(gid_t gid) {
         static char grpstr[10];
         struct group *grp_ptr;
         if((grp_ptr = getgrgid(gid)) == NULL){
-                sprintf(grpstr, "% d", gid);
+                sprintf(grpstr, "%d", gid);
                 return grpstr;
         }else
                 return grp_ptr->gr_name;
